@@ -1,10 +1,14 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './modules/auth/auth.module';
 import { PlacesModule } from './modules/places/places.module';
 import { SessionsModule } from './modules/sessions/sessions.module';
 import { UsersModule } from './modules/users/users.module';
+import { JwtAuthMiddleware } from './modules/auth/jwt-auth.middleware';
+import { PlacesController } from './modules/places/places.controller';
+import { SessionsController } from './modules/sessions/sessions.controller';
+import { UsersController } from './modules/users/users.controller';
 
 @Module({
   imports: [
@@ -28,4 +32,10 @@ import { UsersModule } from './modules/users/users.module';
     SessionsModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(JwtAuthMiddleware)
+      .forRoutes(UsersController, SessionsController, PlacesController);
+  }
+}

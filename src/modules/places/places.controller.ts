@@ -1,12 +1,10 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AutocompleteQueryDto } from './dto/autocomplete-query.dto';
 import { ReverseGeocodeQueryDto } from './dto/reverse-geocode-query.dto';
 import { PlacesService } from './places.service';
 
 @Controller('places')
-@UseGuards(JwtAuthGuard)
 @ApiTags('Places')
 @ApiBearerAuth()
 export class PlacesController {

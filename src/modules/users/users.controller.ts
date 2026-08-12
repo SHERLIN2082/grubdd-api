@@ -1,13 +1,10 @@
-import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AuthUser } from '../auth/auth-user.interface';
-import { CurrentUser } from '../auth/current-user.decorator';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AuthRequest } from '../auth/jwt-auth.middleware';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UsersService } from './users.service';
 
 @Controller('users')
-@UseGuards(JwtAuthGuard)
 @ApiTags('Users')
 @ApiBearerAuth()
 export class UsersController {
@@ -15,14 +12,14 @@ export class UsersController {
 
   @Get('me')
   @ApiOperation({ summary: 'Get my profile' })
-  me(@CurrentUser() user: AuthUser) {
-    return this.usersService.findMe(user.id);
+  me(@Req() request: AuthRequest) {
+    return this.usersService.findMe(request.user.id);
   }
 
   @Patch('profile')
   @ApiOperation({ summary: 'Create or update my profile' })
   @ApiBody({ type: UpdateProfileDto })
-  update(@CurrentUser() user: AuthUser, @Body() dto: UpdateProfileDto) {
-    return this.usersService.updateProfile(user.id, dto);
+  update(@Req() request: AuthRequest, @Body() dto: UpdateProfileDto) {
+    return this.usersService.updateProfile(request.user.id, dto);
   }
 }
