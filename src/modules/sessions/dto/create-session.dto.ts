@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { MatchRule } from '../../../model/entities/session.entity';
 
 class LocationDto {
   @ApiProperty({ example: 13.0827 })
@@ -21,6 +22,6 @@ export class CreateSessionDto {
   @ApiProperty({ example: [1, 2], type: [Number] })
   priceLevel: number[];
 
-  @ApiProperty({ example: 'ALL', enum: ['ALL', 'MAJORITY'] })
-  matchRule: string;
+  @ApiProperty({ example: MatchRule.ALL, enum: MatchRule })
+  matchRule: MatchRule;
 }

@@ -18,21 +18,21 @@ export class Swipe {
   sessionId: string;
 
   @ManyToOne(() => Session, (session) => session.swipes, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'session_id' })
+  @JoinColumn({ name: 'session_id', referencedColumnName: 'id' })
   session: Session;
 
   @Column({ name: 'user_id', type: 'bigint', unsigned: true })
   userId: string;
 
   @ManyToOne(() => User, (user) => user.swipes, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'user_id' })
+  @JoinColumn({ name: 'user_id', referencedColumnName: 'id' })
   user: User;
 
   @Column({ name: 'restaurant_id', type: 'bigint', unsigned: true })
   restaurantId: string;
 
   @ManyToOne(() => Restaurant, (restaurant) => restaurant.swipes, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'restaurant_id' })
+  @JoinColumn({ name: 'restaurant_id', referencedColumnName: 'id' })
   restaurant: Restaurant;
 
   @Column({ type: 'enum', enum: SwipeVote })

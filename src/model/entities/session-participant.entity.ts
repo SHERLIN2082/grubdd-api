@@ -12,14 +12,14 @@ export class SessionParticipant {
   sessionId: string;
 
   @ManyToOne(() => Session, (session) => session.participants, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'session_id' })
+  @JoinColumn({ name: 'session_id', referencedColumnName: 'id' })
   session: Session;
 
   @Column({ name: 'user_id', type: 'bigint', unsigned: true })
   userId: string;
 
   @ManyToOne(() => User, (user) => user.sessionParticipants, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'user_id' })
+  @JoinColumn({ name: 'user_id', referencedColumnName: 'id' })
   user: User;
 
   @Column({ name: 'is_host', type: 'boolean', default: false })

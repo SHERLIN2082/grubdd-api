@@ -12,6 +12,11 @@ export enum SessionStatus {
   COMPLETED = 'COMPLETED',
 }
 
+export enum MatchRule {
+  ALL = 'ALL',
+  MAJORITY = 'MAJORITY',
+}
+
 @Entity('sessions')
 export class Session {
   @PrimaryGeneratedColumn({ type: 'bigint', unsigned: true })
@@ -24,7 +29,7 @@ export class Session {
   hostId: string;
 
   @ManyToOne(() => User, (user) => user.hostedSessions, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'host_id' })
+  @JoinColumn({ name: 'host_id', referencedColumnName: 'id' })
   host: User;
 
   @Column({ name: 'location_name', type: 'varchar', length: 255, nullable: true })
@@ -43,7 +48,7 @@ export class Session {
   priceFilter: string | null;
 
   @Column({ name: 'match_rule', type: 'varchar', length: 30 })
-  matchRule: string;
+  matchRule: MatchRule;
 
   @Column({ type: 'enum', enum: SessionStatus, default: SessionStatus.LOBBY })
   status: SessionStatus;
@@ -51,8 +56,11 @@ export class Session {
   @Column({ name: 'final_restaurant_id', type: 'bigint', unsigned: true, nullable: true })
   finalRestaurantId: string | null;
 
-  @ManyToOne(() => Restaurant, { nullable: true, onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'final_restaurant_id' })
+  @ManyToOne(() => Restaurant, (restaurant) => restaurant.finalSessions, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'final_restaurant_id', referencedColumnName: 'id' })
   finalRestaurant: Restaurant | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })

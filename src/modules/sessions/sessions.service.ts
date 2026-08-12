@@ -6,7 +6,7 @@ import { Match } from '../../model/entities/match.entity';
 import { Restaurant } from '../../model/entities/restaurant.entity';
 import { SessionParticipant } from '../../model/entities/session-participant.entity';
 import { SessionRestaurant } from '../../model/entities/session-restaurant.entity';
-import { Session, SessionStatus } from '../../model/entities/session.entity';
+import { MatchRule, Session, SessionStatus } from '../../model/entities/session.entity';
 import { Swipe, SwipeVote } from '../../model/entities/swipe.entity';
 import { PlacesService } from '../places/places.service';
 import { SessionsGateway } from './sessions.gateway';
@@ -179,7 +179,10 @@ export class SessionsService {
       this.swipes.countBy({ sessionId: id, restaurantId, vote: SwipeVote.YES }),
       this.participants.countBy({ sessionId: id }),
     ]);
-    const required = session.matchRule === 'MAJORITY' ? Math.floor(totalParticipants / 2) + 1 : totalParticipants;
+    const required =
+      session.matchRule === MatchRule.MAJORITY
+        ? Math.floor(totalParticipants / 2) + 1
+        : totalParticipants;
     if (yesCount < required) return { matched: false };
 
     let match = await this.matches.findOne({ where: { sessionId: id, restaurantId }, relations: { restaurant: true } });
@@ -284,7 +287,7 @@ export class SessionsService {
       throw new BadRequestException('priceLevel values must be between 0 and 4');
     }
 
-    if (dto.matchRule !== 'ALL' && dto.matchRule !== 'MAJORITY') {
+    if (dto.matchRule !== MatchRule.ALL && dto.matchRule !== MatchRule.MAJORITY) {
       throw new BadRequestException('matchRule must be ALL or MAJORITY');
     }
   }

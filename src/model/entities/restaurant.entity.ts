@@ -2,6 +2,7 @@ import { Column, CreateDateColumn, Entity, OneToMany, PrimaryGeneratedColumn } f
 import { Match } from './match.entity';
 import { SessionRestaurant } from './session-restaurant.entity';
 import { Swipe } from './swipe.entity';
+import { Session } from './session.entity';
 
 @Entity('restaurants')
 export class Restaurant {
@@ -46,4 +47,7 @@ export class Restaurant {
 
   @OneToMany(() => Match, (match) => match.restaurant)
   matches: Match[];
+
+  @OneToMany(() => Session, (session) => session.finalRestaurant)
+  finalSessions: Session[];
 }

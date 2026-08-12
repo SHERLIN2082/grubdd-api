@@ -12,14 +12,14 @@ export class SessionRestaurant {
   sessionId: string;
 
   @ManyToOne(() => Session, (session) => session.sessionRestaurants, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'session_id' })
+  @JoinColumn({ name: 'session_id', referencedColumnName: 'id' })
   session: Session;
 
   @Column({ name: 'restaurant_id', type: 'bigint', unsigned: true })
   restaurantId: string;
 
   @ManyToOne(() => Restaurant, (restaurant) => restaurant.sessionRestaurants, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'restaurant_id' })
+  @JoinColumn({ name: 'restaurant_id', referencedColumnName: 'id' })
   restaurant: Restaurant;
 
   @Column({ name: 'card_index', type: 'int' })
