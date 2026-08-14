@@ -5,7 +5,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { PlacesModule } from './modules/places/places.module';
 import { SessionsModule } from './modules/sessions/sessions.module';
 import { UsersModule } from './modules/users/users.module';
-import { JwtAuthMiddleware } from './modules/auth/jwt-auth.middleware';
+import { JwtAuthMiddleware } from './common/middleware/jwt-auth.middleware';
 import { PlacesController } from './modules/places/places.controller';
 import { SessionsController } from './modules/sessions/sessions.controller';
 import { UsersController } from './modules/users/users.controller';

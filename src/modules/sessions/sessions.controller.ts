@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AuthRequest } from '../auth/jwt-auth.middleware';
+import { AuthRequest } from '../../common/interfaces/auth-request.interface';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { CreateSwipeDto } from './dto/create-swipe.dto';
 import { FinalPickDto } from './dto/final-pick.dto';

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Patch, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AuthRequest } from '../auth/jwt-auth.middleware';
+import { AuthRequest } from '../../common/interfaces/auth-request.interface';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UsersService } from './users.service';
 
