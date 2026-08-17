@@ -244,7 +244,12 @@ export class SessionsService {
       where: { userId }, relations: { session: { finalRestaurant: true } },
       order: { joinedAt: 'DESC' }, take: recentOnly ? 5 : 50,
     });
-    return rows.map(({ session }) => ({
+
+    const uniqueSessions = Array.from(
+      new Map(rows.map((row) => [row.session.id, row.session])).values(),
+    );
+
+    return uniqueSessions.map((session) => ({
       id: session.id, roomCode: session.roomCode, status: session.status,
       finalRestaurant: session.finalRestaurant?.name ?? null, restaurantName: session.finalRestaurant?.name ?? null,
       createdAt: session.createdAt,

@@ -30,6 +30,15 @@ export class UsersService {
       throw new BadRequestException('displayName must be 100 characters or less');
     }
 
+    const cleanName = dto.displayName.trim();
+    const duplicateUser = await this.userRepository.findOneBy({
+      displayName: cleanName,
+    });
+
+    if (duplicateUser && duplicateUser.id !== id) {
+      throw new BadRequestException('This display name is already taken');
+    }
+
     if (dto.avatar !== undefined) {
       if (typeof dto.avatar !== 'string' || dto.avatar.length === 0) {
         throw new BadRequestException('avatar cannot be empty');
@@ -41,7 +50,7 @@ export class UsersService {
     }
 
     const user = await this.findMe(id);
-    user.displayName = dto.displayName;
+    user.displayName = cleanName;
 
     if (dto.avatar !== undefined) {
       user.avatar = dto.avatar;
