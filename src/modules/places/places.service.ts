@@ -102,6 +102,21 @@ export class PlacesService {
     return { address: data.results[0]?.formatted_address ?? '', latitude, longitude };
   }
 
+  async photo(reference: string) {
+    if (!reference) {
+      throw new BadRequestException('photo reference is required');
+    }
+    const url = `${this.baseUrl}/photo?maxwidth=900&photo_reference=${encodeURIComponent(reference)}&key=${this.apiKey}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new BadGatewayException('Google Places photo request failed');
+    }
+    return {
+      bytes: Buffer.from(await response.arrayBuffer()),
+      contentType: response.headers.get('content-type') ?? 'image/jpeg',
+    };
+  }
+
   async nearby(
     latitude: string,
     longitude: string,

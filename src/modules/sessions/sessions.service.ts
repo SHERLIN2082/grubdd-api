@@ -32,6 +32,38 @@ export class SessionsService {
     ).join('');
   }
 
+  private normalizePlaceText(value?: string | null): string {
+    return (value ?? '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  private samePhysicalRestaurant(
+    first: { name: string; address?: string | null; latitude?: string | number | null; longitude?: string | number | null },
+    second: { name: string; address?: string | null; latitude?: string | number | null; longitude?: string | number | null },
+  ): boolean {
+    if (this.normalizePlaceText(first.name) !== this.normalizePlaceText(second.name)) return false;
+
+    const firstAddress = this.normalizePlaceText(first.address);
+    const secondAddress = this.normalizePlaceText(second.address);
+    if (firstAddress && secondAddress && firstAddress === secondAddress) return true;
+
+    const firstLatitude = Number(first.latitude);
+    const firstLongitude = Number(first.longitude);
+    const secondLatitude = Number(second.latitude);
+    const secondLongitude = Number(second.longitude);
+    if (![firstLatitude, firstLongitude, secondLatitude, secondLongitude].every(Number.isFinite)) return false;
+
+    // Roughly 100 metres, which catches duplicate listings without hiding
+    // separate branches of the same restaurant chain.
+    return Math.abs(firstLatitude - secondLatitude) < 0.0009
+      && Math.abs(firstLongitude - secondLongitude) < 0.0009;
+  }
+
+  private sameRestaurantName(first: { name: string }, second: { name: string }): boolean {
+    return this.normalizePlaceText(first.name) === this.normalizePlaceText(second.name);
+  }
+
   private async findSessionOrFail(id: string): Promise<Session> {
     const session = await this.sessions.findOne({ where: { id }, relations: { finalRestaurant: true } });
     if (!session) throw new NotFoundException('Session not found');
@@ -85,9 +117,22 @@ export class SessionsService {
   }
 
   async getOne(id: string, userId: string) {
-    await this.findParticipantOrFail(id, userId);
+    const participant = await this.findParticipantOrFail(id, userId);
     const session = await this.findSessionOrFail(id);
-    return { id: session.id, roomCode: session.roomCode, status: session.status, hostId: session.hostId };
+    return {
+      id: session.id,
+      roomCode: session.roomCode,
+      status: session.status,
+      hostId: session.hostId,
+      isHost: participant.isHost,
+      locationName: session.locationName,
+      radiusKm: Number(session.radiusKm),
+      priceLevel: (session.priceFilter ?? '')
+        .split(',')
+        .filter(Boolean)
+        .map(Number),
+      matchRule: session.matchRule,
+    };
   }
 
   async getParticipants(id: string, userId: string) {
@@ -100,8 +145,26 @@ export class SessionsService {
     const session = await this.findSessionOrFail(id);
     if (session.hostId !== userId) throw new ForbiddenException('Only the host can start swiping');
     if (session.status !== SessionStatus.LOBBY) throw new BadRequestException('Session has already started');
+    const participantCount = await this.participants.countBy({ sessionId: id });
+    if (participantCount < 1) throw new BadRequestException('At least one participant is required to start');
 
-    const places = await this.places.nearby(session.latitude, session.longitude, session.radiusKm, session.priceFilter);
+    const nearbyPlaces = await this.places.nearby(session.latitude, session.longitude, session.radiusKm, session.priceFilter);
+    const places = nearbyPlaces.filter((place, index, allPlaces) =>
+      allPlaces.findIndex((candidate) => this.sameRestaurantName(candidate, place) || this.samePhysicalRestaurant(
+        {
+          name: candidate.name,
+          address: candidate.vicinity,
+          latitude: candidate.geometry?.location.lat,
+          longitude: candidate.geometry?.location.lng,
+        },
+        {
+          name: place.name,
+          address: place.vicinity,
+          latitude: place.geometry?.location.lat,
+          longitude: place.geometry?.location.lng,
+        },
+      )) === index,
+    );
     for (const [cardIndex, place] of places.entries()) {
       let restaurant = await this.restaurants.findOneBy({ googlePlaceId: place.place_id });
       if (!restaurant) {
@@ -130,7 +193,16 @@ export class SessionsService {
   async getRestaurants(id: string, userId: string) {
     await this.findParticipantOrFail(id, userId);
     const rows = await this.decks.find({ where: { sessionId: id }, relations: { restaurant: true }, order: { cardIndex: 'ASC' } });
-    return rows.map(({ restaurant }) => this.restaurantResponse(restaurant));
+    const uniqueRestaurants = rows
+      .map(({ restaurant }) => restaurant)
+      .filter((restaurant, index, restaurants) =>
+        restaurants.findIndex((candidate) =>
+          candidate.id === restaurant.id
+          || this.sameRestaurantName(candidate, restaurant)
+          || this.samePhysicalRestaurant(candidate, restaurant),
+        ) === index,
+      );
+    return uniqueRestaurants.map((restaurant) => this.restaurantResponse(restaurant));
   }
 
   async getRestaurant(id: string, restaurantId: string, userId: string) {
