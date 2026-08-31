@@ -76,6 +76,12 @@ export class SessionsController {
     return this.sessions.swipe(id, request.user.id, dto.restaurantId, dto.vote);
   }
 
+  @Get(':id/matches/latest')
+  @ApiOperation({ summary: 'Get the latest match in a session' })
+  latestMatch(@Param('id') id: string, @Req() request: AuthRequest) {
+    return this.sessions.getLatestMatch(id, request.user.id);
+  }
+
   @Get(':id/matches/:matchId')
   @ApiOperation({ summary: 'Get match details and YES voters' })
   match(@Param('id') id: string, @Param('matchId') matchId: string, @Req() request: AuthRequest) {

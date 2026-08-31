@@ -267,15 +267,25 @@ export class SessionsService {
   }
 
   async getMatch(id: string, matchId: string, userId: string) {
-    await this.findParticipantOrFail(id, userId);
+    const participant = await this.findParticipantOrFail(id, userId);
     const match = await this.matches.findOne({ where: { id: matchId, sessionId: id }, relations: { restaurant: true } });
     if (!match) throw new NotFoundException('Match not found');
     const yesVotes = await this.swipes.find({ where: { sessionId: id, restaurantId: match.restaurantId, vote: SwipeVote.YES }, relations: { user: true } });
     return {
       id: match.id,
+      isHost: participant.isHost,
       restaurant: this.restaurantResponse(match.restaurant),
       yesVoters: yesVotes.map(({ user }) => ({ id: user.id, name: user.displayName, avatar: user.avatar })),
     };
+  }
+
+  async getLatestMatch(id: string, userId: string) {
+    await this.findParticipantOrFail(id, userId);
+    const match = await this.matches.findOne({
+      where: { sessionId: id },
+      order: { matchedAt: 'DESC' },
+    });
+    return match ? { id: match.id } : null;
   }
 
   async finalPick(id: string, userId: string, restaurantId: string) {
