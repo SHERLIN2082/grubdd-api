@@ -51,6 +51,24 @@ export class PlacesService {
     return data;
   }
 
+  private distanceKm(
+    firstLatitude: number,
+    firstLongitude: number,
+    secondLatitude: number,
+    secondLongitude: number,
+  ): number {
+    const toRadians = (degrees: number) => degrees * Math.PI / 180;
+    const latitudeDelta = toRadians(secondLatitude - firstLatitude);
+    const longitudeDelta = toRadians(secondLongitude - firstLongitude);
+    const startLatitude = toRadians(firstLatitude);
+    const endLatitude = toRadians(secondLatitude);
+    const haversine = Math.sin(latitudeDelta / 2) ** 2
+      + Math.cos(startLatitude) * Math.cos(endLatitude)
+      * Math.sin(longitudeDelta / 2) ** 2;
+
+    return 6371 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+  }
+
   async autocomplete(query: string) {
     if (!query || typeof query !== 'string') {
       throw new BadRequestException('query is required');
@@ -123,9 +141,20 @@ export class PlacesService {
     radiusKm: string,
     priceFilter: string | null,
   ): Promise<GooglePlace[]> {
+    const centerLatitude = Number(latitude);
+    const centerLongitude = Number(longitude);
+    const searchRadiusKm = Number(radiusKm);
+
+    if (!Number.isFinite(centerLatitude) || !Number.isFinite(centerLongitude)) {
+      throw new BadRequestException('A valid search location is required');
+    }
+    if (!Number.isFinite(searchRadiusKm) || searchRadiusKm <= 0) {
+      throw new BadRequestException('A valid search radius is required');
+    }
+
     const params = new URLSearchParams({
-      location: `${latitude},${longitude}`,
-      radius: String(Number(radiusKm) * 1000),
+      location: `${centerLatitude},${centerLongitude}`,
+      radius: String(searchRadiusKm * 1000),
       type: 'restaurant',
       key: this.apiKey,
     });
@@ -137,6 +166,37 @@ export class PlacesService {
 
     const url = `${this.baseUrl}/nearbysearch/json?${params}`;
     const data = await this.callGoogleApi(url);
-    return data.results;
+    return (data.results as GooglePlace[])
+      .filter((place) => {
+        const location = place.geometry?.location;
+        if (!location || !Number.isFinite(location.lat) || !Number.isFinite(location.lng)) {
+          return false;
+        }
+
+        return this.distanceKm(
+          centerLatitude,
+          centerLongitude,
+          location.lat,
+          location.lng,
+        ) <= searchRadiusKm;
+      })
+      .sort((first, second) => {
+        const ratingDifference = (second.rating ?? 0) - (first.rating ?? 0);
+        if (ratingDifference !== 0) return ratingDifference;
+
+        const firstLocation = first.geometry!.location;
+        const secondLocation = second.geometry!.location;
+        return this.distanceKm(
+          centerLatitude,
+          centerLongitude,
+          firstLocation.lat,
+          firstLocation.lng,
+        ) - this.distanceKm(
+          centerLatitude,
+          centerLongitude,
+          secondLocation.lat,
+          secondLocation.lng,
+        );
+      });
   }
 }

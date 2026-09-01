@@ -168,18 +168,25 @@ export class SessionsService {
     for (const [cardIndex, place] of places.entries()) {
       let restaurant = await this.restaurants.findOneBy({ googlePlaceId: place.place_id });
       if (!restaurant) {
-        restaurant = await this.restaurants.save(this.restaurants.create({
-          googlePlaceId: place.place_id,
-          name: place.name,
-          address: place.vicinity ?? null,
-          latitude: place.geometry?.location?.lat == null ? null : String(place.geometry.location.lat),
-          longitude: place.geometry?.location?.lng == null ? null : String(place.geometry.location.lng),
-          rating: place.rating == null ? null : String(place.rating),
-          priceLevel: place.price_level ?? null,
-          photoReference: place.photos?.[0]?.photo_reference ?? null,
-          googleMapsUrl: `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
-        }));
+        restaurant = this.restaurants.create({ googlePlaceId: place.place_id });
       }
+
+      // Nearby-search data is the source of truth for the current branch. Refresh
+      // cached rows so a previously stored address or coordinate cannot leak into
+      // a newly created session's cards.
+      Object.assign(restaurant, {
+        googlePlaceId: place.place_id,
+        name: place.name,
+        address: place.vicinity ?? null,
+        latitude: place.geometry?.location?.lat == null ? null : String(place.geometry.location.lat),
+        longitude: place.geometry?.location?.lng == null ? null : String(place.geometry.location.lng),
+        rating: place.rating == null ? null : String(place.rating),
+        priceLevel: place.price_level ?? null,
+        photoReference: place.photos?.[0]?.photo_reference ?? null,
+        googleMapsUrl: `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
+      });
+      restaurant = await this.restaurants.save(restaurant);
+
       if (!(await this.decks.existsBy({ sessionId: id, restaurantId: restaurant.id }))) {
         await this.decks.save(this.decks.create({ sessionId: id, restaurantId: restaurant.id, cardIndex }));
       }
