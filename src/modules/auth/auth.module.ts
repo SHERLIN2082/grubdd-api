@@ -7,7 +7,10 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User]), JwtModule.register({})],
+  imports: [
+    TypeOrmModule.forFeature([User]),
+    JwtModule.register({}),
+  ],
   controllers: [AuthController],
   providers: [AuthService, JwtAuthMiddleware],
   exports: [JwtModule, JwtAuthMiddleware],

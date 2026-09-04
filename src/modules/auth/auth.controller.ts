@@ -11,7 +11,8 @@ export class AuthController {
   @Post('guest')
   @ApiOperation({ summary: 'Create or sign in a guest user' })
   @ApiBody({ type: GuestLoginDto })
-  guest(@Body() dto: GuestLoginDto) {
-    return this.authService.loginAsGuest(dto.deviceId);
+  loginAsGuest(@Body() loginDetails: GuestLoginDto) {
+    const deviceId = loginDetails.deviceId;
+    return this.authService.loginAsGuest(deviceId);
   }
 }

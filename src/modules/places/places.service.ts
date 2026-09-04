@@ -1,4 +1,10 @@
-import { BadGatewayException, BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 export interface GooglePlace {
@@ -19,6 +25,7 @@ interface GooglePrediction {
 @Injectable()
 export class PlacesService {
   private readonly baseUrl = 'https://maps.googleapis.com/maps/api/place';
+  private readonly logger = new Logger(PlacesService.name);
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -69,6 +76,29 @@ export class PlacesService {
     return 6371 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
   }
 
+  private getPlaceDistance(
+    place: GooglePlace,
+    centerLatitude: number,
+    centerLongitude: number,
+  ): number | null {
+    const location = place.geometry?.location;
+
+    if (!location) {
+      return null;
+    }
+
+    if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) {
+      return null;
+    }
+
+    return this.distanceKm(
+      centerLatitude,
+      centerLongitude,
+      location.lat,
+      location.lng,
+    );
+  }
+
   async autocomplete(query: string) {
     if (!query || typeof query !== 'string') {
       throw new BadRequestException('query is required');
@@ -93,8 +123,19 @@ export class PlacesService {
     }
 
     const fields = 'place_id,formatted_address,geometry';
-    const url = `${this.baseUrl}/details/json?place_id=${encodeURIComponent(placeId)}&fields=${fields}&key=${this.apiKey}`;
+    const params = new URLSearchParams({
+      place_id: placeId,
+      fields,
+      key: this.apiKey,
+    });
+    const url = `${this.baseUrl}/details/json?${params}`;
     const data = await this.callGoogleApi(url);
+
+    this.logger.log(
+      `[LOCATION 2] Selected place: ${data.result.formatted_address} ` +
+      `(${data.result.geometry.location.lat}, ${data.result.geometry.location.lng})`,
+    );
+
     return {
       placeId: data.result.place_id,
       address: data.result.formatted_address,
@@ -115,16 +156,31 @@ export class PlacesService {
       throw new BadRequestException('longitude must be between -180 and 180');
     }
 
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${this.apiKey}`;
+    const params = new URLSearchParams({
+      latlng: `${latitude},${longitude}`,
+      key: this.apiKey,
+    });
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?${params}`;
     const data = await this.callGoogleApi(url);
-    return { address: data.results[0]?.formatted_address ?? '', latitude, longitude };
+    const address = data.results[0]?.formatted_address ?? '';
+
+    this.logger.log(
+      `[LOCATION 2] Reverse geocode: ${address} (${latitude}, ${longitude})`,
+    );
+
+    return { address, latitude, longitude };
   }
 
   async photo(reference: string) {
     if (!reference) {
       throw new BadRequestException('photo reference is required');
     }
-    const url = `${this.baseUrl}/photo?maxwidth=900&photo_reference=${encodeURIComponent(reference)}&key=${this.apiKey}`;
+    const params = new URLSearchParams({
+      maxwidth: '900',
+      photo_reference: reference,
+      key: this.apiKey,
+    });
+    const url = `${this.baseUrl}/photo?${params}`;
     const response = await fetch(url);
     if (!response.ok) {
       throw new BadGatewayException('Google Places photo request failed');
@@ -144,6 +200,11 @@ export class PlacesService {
     const centerLatitude = Number(latitude);
     const centerLongitude = Number(longitude);
     const searchRadiusKm = Number(radiusKm);
+
+    this.logger.log(
+      `[LOCATION 4] Searching from (${centerLatitude}, ${centerLongitude}), ` +
+      `radius: ${searchRadiusKm} km, prices: ${priceFilter ?? 'all'}`,
+    );
 
     if (!Number.isFinite(centerLatitude) || !Number.isFinite(centerLongitude)) {
       throw new BadRequestException('A valid search location is required');
@@ -166,37 +227,65 @@ export class PlacesService {
 
     const url = `${this.baseUrl}/nearbysearch/json?${params}`;
     const data = await this.callGoogleApi(url);
-    return (data.results as GooglePlace[])
-      .filter((place) => {
-        const location = place.geometry?.location;
-        if (!location || !Number.isFinite(location.lat) || !Number.isFinite(location.lng)) {
-          return false;
-        }
+    const googleResults = data.results as GooglePlace[];
 
-        return this.distanceKm(
-          centerLatitude,
-          centerLongitude,
-          location.lat,
-          location.lng,
-        ) <= searchRadiusKm;
-      })
-      .sort((first, second) => {
-        const ratingDifference = (second.rating ?? 0) - (first.rating ?? 0);
-        if (ratingDifference !== 0) return ratingDifference;
+    this.logger.log(
+      `[LOCATION 5] Google returned ${googleResults.length} restaurants`,
+    );
 
-        const firstLocation = first.geometry!.location;
-        const secondLocation = second.geometry!.location;
-        return this.distanceKm(
-          centerLatitude,
-          centerLongitude,
-          firstLocation.lat,
-          firstLocation.lng,
-        ) - this.distanceKm(
-          centerLatitude,
-          centerLongitude,
-          secondLocation.lat,
-          secondLocation.lng,
-        );
-      });
+    const nearbyRestaurants: GooglePlace[] = [];
+
+    // Check every Google result one at a time.
+    for (const place of googleResults) {
+      const distance = this.getPlaceDistance(
+        place,
+        centerLatitude,
+        centerLongitude,
+      );
+
+      if (distance === null) {
+        this.logger.log(`[LOCATION 6] Removed ${place.name}: missing coordinates`);
+        continue;
+      }
+
+      const isInsideRadius = distance <= searchRadiusKm;
+      this.logger.log(
+        `[LOCATION 6] ${place.name}: ${distance.toFixed(2)} km - ` +
+        `${isInsideRadius ? 'included' : 'removed'}`,
+      );
+
+      if (isInsideRadius) {
+        nearbyRestaurants.push(place);
+      }
+    }
+
+    // Higher-rated restaurants appear first.
+    nearbyRestaurants.sort((first, second) => {
+      const firstRating = first.rating ?? 0;
+      const secondRating = second.rating ?? 0;
+
+      if (firstRating !== secondRating) {
+        return secondRating - firstRating;
+      }
+
+      const firstDistance = this.getPlaceDistance(
+        first,
+        centerLatitude,
+        centerLongitude,
+      ) ?? 0;
+      const secondDistance = this.getPlaceDistance(
+        second,
+        centerLatitude,
+        centerLongitude,
+      ) ?? 0;
+
+      return firstDistance - secondDistance;
+    });
+
+    this.logger.log(
+      `[LOCATION 7] ${nearbyRestaurants.length} restaurant cards kept`,
+    );
+
+    return nearbyRestaurants;
   }
 }

@@ -15,6 +15,22 @@ export class AuthService {
   ) {}
 
   async loginAsGuest(deviceId: string) {
+    this.validateDeviceId(deviceId);
+
+    const user = await this.findOrCreateGuest(deviceId);
+    const accessToken = await this.createAccessToken(user);
+    const isProfileCompleted = Boolean(user.displayName);
+
+    return {
+      accessToken,
+      user: {
+        id: user.id,
+        isProfileCompleted,
+      },
+    };
+  }
+
+  private validateDeviceId(deviceId: string): void {
     if (!deviceId || typeof deviceId !== 'string') {
       throw new BadRequestException('deviceId is required');
     }
@@ -22,17 +38,6 @@ export class AuthService {
     if (deviceId.length > 255) {
       throw new BadRequestException('deviceId is too long');
     }
-
-    const user = await this.findOrCreateGuest(deviceId);
-    const accessToken = await this.createAccessToken(user);
-
-    return {
-      accessToken,
-      user: {
-        id: user.id,
-        isProfileCompleted: Boolean(user.displayName),
-      },
-    };
   }
 
   private async findOrCreateGuest(deviceId: string): Promise<User> {
@@ -47,10 +52,19 @@ export class AuthService {
   }
 
   private createAccessToken(user: User): Promise<string> {
+    const tokenData = {
+      id: user.id,
+      deviceId: user.deviceId,
+    };
+    const jwtSecret = this.configService.get<string>(
+      'JWT_SECRET',
+      'dev-secret',
+    );
+
     return this.jwtService.signAsync(
-      { id: user.id, deviceId: user.deviceId },
+      tokenData,
       {
-        secret: this.configService.get<string>('JWT_SECRET', 'dev-secret'),
+        secret: jwtSecret,
         expiresIn: '30d',
       },
     );

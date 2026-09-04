@@ -13,7 +13,18 @@ import { SessionsGateway } from './sessions.gateway';
 import { SessionsService } from './sessions.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Session, SessionParticipant, Restaurant, SessionRestaurant, Swipe, Match]), AuthModule, PlacesModule],
+  imports: [
+    TypeOrmModule.forFeature([
+      Session,
+      SessionParticipant,
+      Restaurant,
+      SessionRestaurant,
+      Swipe,
+      Match,
+    ]),
+    AuthModule,
+    PlacesModule,
+  ],
   controllers: [SessionsController],
   providers: [SessionsService, SessionsGateway],
 })

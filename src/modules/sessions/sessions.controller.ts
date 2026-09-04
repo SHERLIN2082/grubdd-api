@@ -65,14 +65,22 @@ export class SessionsController {
 
   @Get(':id/restaurants/:restaurantId')
   @ApiOperation({ summary: 'Get one restaurant from the deck' })
-  restaurant(@Param('id') id: string, @Param('restaurantId') restaurantId: string, @Req() request: AuthRequest) {
+  restaurant(
+    @Param('id') id: string,
+    @Param('restaurantId') restaurantId: string,
+    @Req() request: AuthRequest,
+  ) {
     return this.sessions.getRestaurant(id, restaurantId, request.user.id);
   }
 
   @Post(':id/swipes')
   @ApiOperation({ summary: 'Submit a YES or NO vote' })
   @ApiBody({ type: CreateSwipeDto })
-  swipe(@Param('id') id: string, @Req() request: AuthRequest, @Body() dto: CreateSwipeDto) {
+  swipe(
+    @Param('id') id: string,
+    @Req() request: AuthRequest,
+    @Body() dto: CreateSwipeDto,
+  ) {
     return this.sessions.swipe(id, request.user.id, dto.restaurantId, dto.vote);
   }
 
@@ -84,14 +92,22 @@ export class SessionsController {
 
   @Get(':id/matches/:matchId')
   @ApiOperation({ summary: 'Get match details and YES voters' })
-  match(@Param('id') id: string, @Param('matchId') matchId: string, @Req() request: AuthRequest) {
+  match(
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+    @Req() request: AuthRequest,
+  ) {
     return this.sessions.getMatch(id, matchId, request.user.id);
   }
 
   @Post(':id/final-pick')
   @ApiOperation({ summary: 'Choose the final restaurant (host only)' })
   @ApiBody({ type: FinalPickDto })
-  finalPick(@Param('id') id: string, @Req() request: AuthRequest, @Body() dto: FinalPickDto) {
+  finalPick(
+    @Param('id') id: string,
+    @Req() request: AuthRequest,
+    @Body() dto: FinalPickDto,
+  ) {
     return this.sessions.finalPick(id, request.user.id, dto.restaurantId);
   }
 

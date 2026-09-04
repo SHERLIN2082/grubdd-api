@@ -28,8 +28,13 @@ export class PlacesController {
   }
 
   @Get('photo')
-  @ApiOperation({ summary: 'Load a Google Places photo without exposing the API key' })
-  async photo(@Query('reference') reference: string, @Res() response: PhotoResponse) {
+  @ApiOperation({
+    summary: 'Load a Google Places photo without exposing the API key',
+  })
+  async photo(
+    @Query('reference') reference: string,
+    @Res() response: PhotoResponse,
+  ) {
     const photo = await this.places.photo(reference);
     response.setHeader('Content-Type', photo.contentType);
     response.setHeader('Cache-Control', 'public, max-age=86400');

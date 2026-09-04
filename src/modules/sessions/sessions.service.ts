@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateSessionDto } from './dto/create-session.dto';
@@ -8,16 +14,21 @@ import { SessionParticipant } from '../../model/entities/session-participant.ent
 import { SessionRestaurant } from '../../model/entities/session-restaurant.entity';
 import { MatchRule, Session, SessionStatus } from '../../model/entities/session.entity';
 import { Swipe, SwipeVote } from '../../model/entities/swipe.entity';
-import { PlacesService } from '../places/places.service';
+import { GooglePlace, PlacesService } from '../places/places.service';
 import { SessionsGateway } from './sessions.gateway';
 
 @Injectable()
 export class SessionsService {
+  private readonly logger = new Logger(SessionsService.name);
+
   constructor(
     @InjectRepository(Session) private readonly sessions: Repository<Session>,
-    @InjectRepository(SessionParticipant) private readonly participants: Repository<SessionParticipant>,
-    @InjectRepository(Restaurant) private readonly restaurants: Repository<Restaurant>,
-    @InjectRepository(SessionRestaurant) private readonly decks: Repository<SessionRestaurant>,
+    @InjectRepository(SessionParticipant)
+    private readonly participants: Repository<SessionParticipant>,
+    @InjectRepository(Restaurant)
+    private readonly restaurants: Repository<Restaurant>,
+    @InjectRepository(SessionRestaurant)
+    private readonly decks: Repository<SessionRestaurant>,
     @InjectRepository(Swipe) private readonly swipes: Repository<Swipe>,
     @InjectRepository(Match) private readonly matches: Repository<Match>,
     private readonly places: PlacesService,
@@ -38,53 +49,151 @@ export class SessionsService {
       .replace(/[^a-z0-9]/g, '');
   }
 
+  private calculateDistanceKm(
+    firstLatitude: number,
+    firstLongitude: number,
+    secondLatitude: number,
+    secondLongitude: number,
+  ): number {
+    const earthRadiusKm = 6371;
+    const toRadians = (degrees: number) => degrees * Math.PI / 180;
+    const latitudeDifference = toRadians(secondLatitude - firstLatitude);
+    const longitudeDifference = toRadians(secondLongitude - firstLongitude);
+
+    const value =
+      Math.sin(latitudeDifference / 2) ** 2 +
+      Math.cos(toRadians(firstLatitude)) *
+        Math.cos(toRadians(secondLatitude)) *
+        Math.sin(longitudeDifference / 2) ** 2;
+
+    const angle = 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+    return earthRadiusKm * angle;
+  }
+
   private samePhysicalRestaurant(
-    first: { name: string; address?: string | null; latitude?: string | number | null; longitude?: string | number | null },
-    second: { name: string; address?: string | null; latitude?: string | number | null; longitude?: string | number | null },
+    first: {
+      name: string;
+      address?: string | null;
+      latitude?: string | number | null;
+      longitude?: string | number | null;
+    },
+    second: {
+      name: string;
+      address?: string | null;
+      latitude?: string | number | null;
+      longitude?: string | number | null;
+    },
   ): boolean {
-    if (this.normalizePlaceText(first.name) !== this.normalizePlaceText(second.name)) return false;
+    const firstName = this.normalizePlaceText(first.name);
+    const secondName = this.normalizePlaceText(second.name);
+
+    if (firstName !== secondName) {
+      return false;
+    }
 
     const firstAddress = this.normalizePlaceText(first.address);
     const secondAddress = this.normalizePlaceText(second.address);
-    if (firstAddress && secondAddress && firstAddress === secondAddress) return true;
+    if (firstAddress && secondAddress && firstAddress === secondAddress) {
+      return true;
+    }
 
     const firstLatitude = Number(first.latitude);
     const firstLongitude = Number(first.longitude);
     const secondLatitude = Number(second.latitude);
     const secondLongitude = Number(second.longitude);
-    if (![firstLatitude, firstLongitude, secondLatitude, secondLongitude].every(Number.isFinite)) return false;
+    const coordinates = [
+      firstLatitude,
+      firstLongitude,
+      secondLatitude,
+      secondLongitude,
+    ];
+    const hasValidCoordinates = coordinates.every(Number.isFinite);
+
+    if (!hasValidCoordinates) {
+      return false;
+    }
 
     // Roughly 100 metres, which catches duplicate listings without hiding
     // separate branches of the same restaurant chain.
-    return Math.abs(firstLatitude - secondLatitude) < 0.0009
-      && Math.abs(firstLongitude - secondLongitude) < 0.0009;
+    const latitudeIsClose = Math.abs(firstLatitude - secondLatitude) < 0.0009;
+    const longitudeIsClose = Math.abs(firstLongitude - secondLongitude) < 0.0009;
+    return latitudeIsClose && longitudeIsClose;
   }
 
   private sameRestaurantName(first: { name: string }, second: { name: string }): boolean {
     return this.normalizePlaceText(first.name) === this.normalizePlaceText(second.name);
   }
 
+  private removeDuplicatePlaces(places: GooglePlace[]): GooglePlace[] {
+    const uniquePlaces: GooglePlace[] = [];
+
+    for (const place of places) {
+      const isDuplicate = uniquePlaces.some((savedPlace) => {
+        if (this.sameRestaurantName(savedPlace, place)) {
+          return true;
+        }
+
+        return this.samePhysicalRestaurant(
+          {
+            name: savedPlace.name,
+            address: savedPlace.vicinity,
+            latitude: savedPlace.geometry?.location.lat,
+            longitude: savedPlace.geometry?.location.lng,
+          },
+          {
+            name: place.name,
+            address: place.vicinity,
+            latitude: place.geometry?.location.lat,
+            longitude: place.geometry?.location.lng,
+          },
+        );
+      });
+
+      if (!isDuplicate) {
+        uniquePlaces.push(place);
+      }
+    }
+
+    return uniquePlaces;
+  }
+
   private async findSessionOrFail(id: string): Promise<Session> {
-    const session = await this.sessions.findOne({ where: { id }, relations: { finalRestaurant: true } });
-    if (!session) throw new NotFoundException('Session not found');
+    const session = await this.sessions.findOne({
+      where: { id },
+      relations: { finalRestaurant: true },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
     return session;
   }
 
   private async findParticipantOrFail(sessionId: string, userId: string) {
     const participant = await this.participants.findOneBy({ sessionId, userId });
-    if (!participant) throw new ForbiddenException('You are not a participant in this session');
+    if (!participant) {
+      throw new ForbiddenException('You are not a participant in this session');
+    }
+
     return participant;
   }
 
   async create(userId: string, dto: CreateSessionDto) {
     this.validateCreateSession(dto);
 
+    this.logger.log(
+      `[LOCATION 3] Creating session at ${dto.location.address} ` +
+      `(${dto.location.latitude}, ${dto.location.longitude}), ` +
+      `radius: ${dto.radiusKm} km`,
+    );
+
     let code = this.generateRoomCode();
     while (await this.sessions.existsBy({ roomCode: code })) {
       code = this.generateRoomCode();
     }
 
-    const session = await this.sessions.save(this.sessions.create({
+    const newSession = this.sessions.create({
       roomCode: code,
       hostId: userId,
       locationName: dto.location.address,
@@ -93,9 +202,22 @@ export class SessionsService {
       radiusKm: String(dto.radiusKm),
       priceFilter: dto.priceLevel.join(','),
       matchRule: dto.matchRule,
-    }));
-    await this.participants.save(this.participants.create({ sessionId: session.id, userId, isHost: true }));
-    return { id: session.id, roomCode: session.roomCode, status: session.status, isHost: true };
+    });
+    const session = await this.sessions.save(newSession);
+
+    const host = this.participants.create({
+      sessionId: session.id,
+      userId,
+      isHost: true,
+    });
+    await this.participants.save(host);
+
+    return {
+      id: session.id,
+      roomCode: session.roomCode,
+      status: session.status,
+      isHost: true,
+    };
   }
 
   async join(userId: string, rawCode: string) {
@@ -105,15 +227,30 @@ export class SessionsService {
 
     const roomCode = rawCode.toUpperCase();
     const session = await this.sessions.findOneBy({ roomCode });
+
     if (!session || session.status !== SessionStatus.LOBBY) {
       throw new NotFoundException('Invalid or expired room code');
     }
-    let participant = await this.participants.findOneBy({ sessionId: session.id, userId });
+    let participant = await this.participants.findOneBy({
+      sessionId: session.id,
+      userId,
+    });
+
     if (!participant) {
-      participant = await this.participants.save(this.participants.create({ sessionId: session.id, userId }));
+      const newParticipant = this.participants.create({
+        sessionId: session.id,
+        userId,
+      });
+      participant = await this.participants.save(newParticipant);
       this.gateway.emitToSession(session.id, 'participantJoined', { userId });
     }
-    return { sessionId: session.id, roomCode, status: session.status, isHost: participant.isHost };
+
+    return {
+      sessionId: session.id,
+      roomCode,
+      status: session.status,
+      isHost: participant.isHost,
+    };
   }
 
   async getOne(id: string, userId: string) {
@@ -137,36 +274,45 @@ export class SessionsService {
 
   async getParticipants(id: string, userId: string) {
     await this.findParticipantOrFail(id, userId);
-    const rows = await this.participants.find({ where: { sessionId: id }, relations: { user: true }, order: { joinedAt: 'ASC' } });
-    return rows.map((row) => ({ id: row.user.id, displayName: row.user.displayName, avatar: row.user.avatar, isHost: row.isHost }));
+    const participants = await this.participants.find({
+      where: { sessionId: id },
+      relations: { user: true },
+      order: { joinedAt: 'ASC' },
+    });
+
+    return participants.map((participant) => ({
+      id: participant.user.id,
+      displayName: participant.user.displayName,
+      avatar: participant.user.avatar,
+      isHost: participant.isHost,
+    }));
   }
 
   async start(id: string, userId: string) {
     const session = await this.findSessionOrFail(id);
-    if (session.hostId !== userId) throw new ForbiddenException('Only the host can start swiping');
-    if (session.status !== SessionStatus.LOBBY) throw new BadRequestException('Session has already started');
-    const participantCount = await this.participants.countBy({ sessionId: id });
-    if (participantCount < 1) throw new BadRequestException('At least one participant is required to start');
+    if (session.hostId !== userId) {
+      throw new ForbiddenException('Only the host can start swiping');
+    }
+    if (session.status !== SessionStatus.LOBBY) {
+      throw new BadRequestException('Session has already started');
+    }
 
-    const nearbyPlaces = await this.places.nearby(session.latitude, session.longitude, session.radiusKm, session.priceFilter);
-    const places = nearbyPlaces.filter((place, index, allPlaces) =>
-      allPlaces.findIndex((candidate) => this.sameRestaurantName(candidate, place) || this.samePhysicalRestaurant(
-        {
-          name: candidate.name,
-          address: candidate.vicinity,
-          latitude: candidate.geometry?.location.lat,
-          longitude: candidate.geometry?.location.lng,
-        },
-        {
-          name: place.name,
-          address: place.vicinity,
-          latitude: place.geometry?.location.lat,
-          longitude: place.geometry?.location.lng,
-        },
-      )) === index,
+    const participantCount = await this.participants.countBy({ sessionId: id });
+    if (participantCount < 1) {
+      throw new BadRequestException('At least one participant is required to start');
+    }
+
+    const nearbyPlaces = await this.places.nearby(
+      session.latitude,
+      session.longitude,
+      session.radiusKm,
+      session.priceFilter,
     );
+    const places = this.removeDuplicatePlaces(nearbyPlaces);
     for (const [cardIndex, place] of places.entries()) {
-      let restaurant = await this.restaurants.findOneBy({ googlePlaceId: place.place_id });
+      let restaurant = await this.restaurants.findOneBy({
+        googlePlaceId: place.place_id,
+      });
       if (!restaurant) {
         restaurant = this.restaurants.create({ googlePlaceId: place.place_id });
       }
@@ -174,49 +320,84 @@ export class SessionsService {
       // Nearby-search data is the source of truth for the current branch. Refresh
       // cached rows so a previously stored address or coordinate cannot leak into
       // a newly created session's cards.
-      Object.assign(restaurant, {
-        googlePlaceId: place.place_id,
-        name: place.name,
-        address: place.vicinity ?? null,
-        latitude: place.geometry?.location?.lat == null ? null : String(place.geometry.location.lat),
-        longitude: place.geometry?.location?.lng == null ? null : String(place.geometry.location.lng),
-        rating: place.rating == null ? null : String(place.rating),
-        priceLevel: place.price_level ?? null,
-        photoReference: place.photos?.[0]?.photo_reference ?? null,
-        googleMapsUrl: `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
-      });
+      restaurant.name = place.name;
+      restaurant.address = place.vicinity ?? null;
+      restaurant.latitude = place.geometry?.location.lat == null
+        ? null
+        : String(place.geometry.location.lat);
+      restaurant.longitude = place.geometry?.location.lng == null
+        ? null
+        : String(place.geometry.location.lng);
+      restaurant.rating = place.rating == null ? null : String(place.rating);
+      restaurant.priceLevel = place.price_level ?? null;
+      restaurant.photoReference = place.photos?.[0]?.photo_reference ?? null;
+      restaurant.googleMapsUrl =
+        `https://www.google.com/maps/place/?q=place_id:${place.place_id}`;
       restaurant = await this.restaurants.save(restaurant);
 
-      if (!(await this.decks.existsBy({ sessionId: id, restaurantId: restaurant.id }))) {
-        await this.decks.save(this.decks.create({ sessionId: id, restaurantId: restaurant.id, cardIndex }));
+      const isAlreadyInDeck = await this.decks.existsBy({
+        sessionId: id,
+        restaurantId: restaurant.id,
+      });
+
+      if (!isAlreadyInDeck) {
+        const deckItem = this.decks.create({
+          sessionId: id,
+          restaurantId: restaurant.id,
+          cardIndex,
+        });
+        await this.decks.save(deckItem);
       }
     }
     session.status = SessionStatus.ACTIVE;
     await this.sessions.save(session);
+
+    this.logger.log(
+      `[LOCATION 8] Session ${id} started with ${places.length} restaurant cards`,
+    );
     this.gateway.emitToSession(id, 'sessionStarted', { sessionId: id });
     return { sessionId: id, status: session.status, restaurantCount: places.length };
   }
 
   async getRestaurants(id: string, userId: string) {
     await this.findParticipantOrFail(id, userId);
-    const rows = await this.decks.find({ where: { sessionId: id }, relations: { restaurant: true }, order: { cardIndex: 'ASC' } });
-    const uniqueRestaurants = rows
-      .map(({ restaurant }) => restaurant)
-      .filter((restaurant, index, restaurants) =>
-        restaurants.findIndex((candidate) =>
-          candidate.id === restaurant.id
-          || this.sameRestaurantName(candidate, restaurant)
-          || this.samePhysicalRestaurant(candidate, restaurant),
-        ) === index,
-      );
-    return uniqueRestaurants.map((restaurant) => this.restaurantResponse(restaurant));
+    const deckItems = await this.decks.find({
+      where: { sessionId: id },
+      relations: { restaurant: true },
+      order: { cardIndex: 'ASC' },
+    });
+    const uniqueRestaurants: Restaurant[] = [];
+
+    for (const deckItem of deckItems) {
+      const restaurant = deckItem.restaurant;
+      const isDuplicate = uniqueRestaurants.some((savedRestaurant) => {
+        return savedRestaurant.id === restaurant.id
+          || this.sameRestaurantName(savedRestaurant, restaurant)
+          || this.samePhysicalRestaurant(savedRestaurant, restaurant);
+      });
+
+      if (!isDuplicate) {
+        uniqueRestaurants.push(restaurant);
+      }
+    }
+
+    return uniqueRestaurants.map((restaurant) => {
+      return this.restaurantResponse(restaurant);
+    });
   }
 
   async getRestaurant(id: string, restaurantId: string, userId: string) {
     await this.findParticipantOrFail(id, userId);
-    const row = await this.decks.findOne({ where: { sessionId: id, restaurantId }, relations: { restaurant: true } });
-    if (!row) throw new NotFoundException('Restaurant not found in this session');
-    return this.restaurantResponse(row.restaurant);
+    const deckItem = await this.decks.findOne({
+      where: { sessionId: id, restaurantId },
+      relations: { restaurant: true },
+    });
+
+    if (!deckItem) {
+      throw new NotFoundException('Restaurant not found in this session');
+    }
+
+    return this.restaurantResponse(deckItem.restaurant);
   }
 
   private restaurantResponse(restaurant: Restaurant) {
@@ -245,49 +426,126 @@ export class SessionsService {
 
     const session = await this.findSessionOrFail(id);
     await this.findParticipantOrFail(id, userId);
-    if (session.status !== SessionStatus.ACTIVE) throw new BadRequestException('Session is not active');
-    if (!(await this.decks.existsBy({ sessionId: id, restaurantId }))) throw new NotFoundException('Restaurant not found in deck');
+    if (session.status !== SessionStatus.ACTIVE) {
+      throw new BadRequestException('Session is not active');
+    }
 
-    let swipe = await this.swipes.findOneBy({ sessionId: id, userId, restaurantId });
-    if (swipe) swipe.vote = vote;
-    else swipe = this.swipes.create({ sessionId: id, userId, restaurantId, vote });
+    const restaurantIsInDeck = await this.decks.existsBy({
+      sessionId: id,
+      restaurantId,
+    });
+    if (!restaurantIsInDeck) {
+      throw new NotFoundException('Restaurant not found in deck');
+    }
+
+    let swipe = await this.swipes.findOneBy({
+      sessionId: id,
+      userId,
+      restaurantId,
+    });
+
+    if (swipe) {
+      swipe.vote = vote;
+    } else {
+      swipe = this.swipes.create({ sessionId: id, userId, restaurantId, vote });
+    }
     await this.swipes.save(swipe);
 
-    if (vote === SwipeVote.NO) return { matched: false };
-    const [yesCount, totalParticipants] = await Promise.all([
-      this.swipes.countBy({ sessionId: id, restaurantId, vote: SwipeVote.YES }),
-      this.participants.countBy({ sessionId: id }),
-    ]);
-    const required =
-      session.matchRule === MatchRule.MAJORITY
-        ? Math.floor(totalParticipants / 2) + 1
-        : totalParticipants;
-    if (yesCount < required) return { matched: false };
+    if (vote === SwipeVote.NO) {
+      return { matched: false };
+    }
 
-    let match = await this.matches.findOne({ where: { sessionId: id, restaurantId }, relations: { restaurant: true } });
+    const yesCount = await this.swipes.countBy({
+      sessionId: id,
+      restaurantId,
+      vote: SwipeVote.YES,
+    });
+    const totalParticipants = await this.participants.countBy({ sessionId: id });
+
+    // A solo user's YES vote is saved, but it should not immediately open the
+    // group-match screen. Solo choices are shown after the deck is finished.
+    if (totalParticipants < 2) {
+      return { matched: false };
+    }
+
+    let requiredVotes = totalParticipants;
+    if (session.matchRule === MatchRule.MAJORITY) {
+      requiredVotes = Math.floor(totalParticipants / 2) + 1;
+    }
+
+    if (yesCount < requiredVotes) {
+      return { matched: false };
+    }
+
+    let match = await this.matches.findOne({
+      where: { sessionId: id, restaurantId },
+      relations: { restaurant: true },
+    });
+
     if (!match) {
-      match = await this.matches.save(this.matches.create({ sessionId: id, restaurantId }));
-      match = (await this.matches.findOne({ where: { id: match.id }, relations: { restaurant: true } }))!;
+      const newMatch = this.matches.create({ sessionId: id, restaurantId });
+      const savedMatch = await this.matches.save(newMatch);
+      match = await this.matches.findOne({
+        where: { id: savedMatch.id },
+        relations: { restaurant: true },
+      });
+
+      if (!match) {
+        throw new NotFoundException('Match could not be loaded');
+      }
+
       this.gateway.emitToSession(id, 'matchFound', { matchId: match.id, restaurantId });
     }
-    return { matched: true, match: { id: match.id, restaurantId, name: match.restaurant.name } };
+
+    return {
+      matched: true,
+      match: {
+        id: match.id,
+        restaurantId,
+        name: match.restaurant.name,
+      },
+    };
   }
 
   async getMatch(id: string, matchId: string, userId: string) {
     const participant = await this.findParticipantOrFail(id, userId);
-    const match = await this.matches.findOne({ where: { id: matchId, sessionId: id }, relations: { restaurant: true } });
-    if (!match) throw new NotFoundException('Match not found');
-    const yesVotes = await this.swipes.find({ where: { sessionId: id, restaurantId: match.restaurantId, vote: SwipeVote.YES }, relations: { user: true } });
+    const match = await this.matches.findOne({
+      where: { id: matchId, sessionId: id },
+      relations: { restaurant: true },
+    });
+    if (!match) {
+      throw new NotFoundException('Match not found');
+    }
+
+    const yesVotes = await this.swipes.find({
+      where: {
+        sessionId: id,
+        restaurantId: match.restaurantId,
+        vote: SwipeVote.YES,
+      },
+      relations: { user: true },
+    });
+
     return {
       id: match.id,
       isHost: participant.isHost,
       restaurant: this.restaurantResponse(match.restaurant),
-      yesVoters: yesVotes.map(({ user }) => ({ id: user.id, name: user.displayName, avatar: user.avatar })),
+      yesVoters: yesVotes.map((yesVote) => ({
+        id: yesVote.user.id,
+        name: yesVote.user.displayName,
+        avatar: yesVote.user.avatar,
+      })),
     };
   }
 
   async getLatestMatch(id: string, userId: string) {
     await this.findParticipantOrFail(id, userId);
+    const participantCount = await this.participants.countBy({ sessionId: id });
+
+    if (participantCount < 2) {
+      return null;
+    }
+
     const match = await this.matches.findOne({
       where: { sessionId: id },
       order: { matchedAt: 'DESC' },
@@ -301,46 +559,139 @@ export class SessionsService {
     }
 
     const session = await this.findSessionOrFail(id);
-    if (session.hostId !== userId) throw new ForbiddenException('Only the host can choose the final restaurant');
+    if (session.hostId !== userId) {
+      throw new ForbiddenException('Only the host can choose the final restaurant');
+    }
+
     const restaurant = await this.restaurants.findOneBy({ id: restaurantId });
-    if (!restaurant || !(await this.decks.existsBy({ sessionId: id, restaurantId }))) throw new NotFoundException('Restaurant not found in deck');
+    const restaurantIsInDeck = await this.decks.existsBy({
+      sessionId: id,
+      restaurantId,
+    });
+
+    if (!restaurant || !restaurantIsInDeck) {
+      throw new NotFoundException('Restaurant not found in deck');
+    }
+
     session.finalRestaurantId = restaurantId;
     session.status = SessionStatus.COMPLETED;
     await this.sessions.save(session);
-    return { status: session.status, finalPick: { id: restaurant.id, name: restaurant.name } };
+
+    return {
+      status: session.status,
+      finalPick: {
+        id: restaurant.id,
+        name: restaurant.name,
+      },
+    };
   }
 
   async results(id: string, userId: string) {
     await this.findParticipantOrFail(id, userId);
     const session = await this.findSessionOrFail(id);
     const totalParticipants = await this.participants.countBy({ sessionId: id });
-    const rows = await this.swipes.createQueryBuilder('swipe')
-      .innerJoinAndSelect('swipe.restaurant', 'restaurant')
-      .select(['restaurant.id AS restaurantId', 'restaurant.name AS restaurantName', 'COUNT(swipe.id) AS yesCount'])
-      .where('swipe.session_id = :id', { id }).andWhere('swipe.vote = :vote', { vote: SwipeVote.YES })
-      .groupBy('restaurant.id').addGroupBy('restaurant.name').orderBy('yesCount', 'DESC').getRawMany();
-    const votes = rows.map((row) => ({ ...row, yesCount: Number(row.yesCount) }));
-    const exactMatches = votes.filter((row) => row.yesCount === totalParticipants);
+
+    const yesSwipes = await this.swipes.find({
+      where: { sessionId: id, vote: SwipeVote.YES },
+      relations: { restaurant: true },
+    });
+
+    const restaurantVotes = new Map<
+      string,
+      { restaurant: Restaurant; yesCount: number }
+    >();
+
+    for (const swipe of yesSwipes) {
+      const savedResult = restaurantVotes.get(swipe.restaurantId);
+
+      if (savedResult) {
+        savedResult.yesCount += 1;
+      } else {
+        restaurantVotes.set(swipe.restaurantId, {
+          restaurant: swipe.restaurant,
+          yesCount: 1,
+        });
+      }
+    }
+
+    const voteResults = Array.from(restaurantVotes.values()).map((result) => {
+      const restaurantLatitude = Number(result.restaurant.latitude);
+      const restaurantLongitude = Number(result.restaurant.longitude);
+      let distanceKm: number | null = null;
+
+      const hasValidLocation =
+        Number.isFinite(restaurantLatitude)
+        && Number.isFinite(restaurantLongitude);
+
+      if (hasValidLocation) {
+        distanceKm = this.calculateDistanceKm(
+          Number(session.latitude),
+          Number(session.longitude),
+          restaurantLatitude,
+          restaurantLongitude,
+        );
+      }
+
+      return {
+        restaurantId: result.restaurant.id,
+        restaurantName: result.restaurant.name,
+        yesCount: result.yesCount,
+        totalParticipants,
+        rating: result.restaurant.rating == null
+          ? null
+          : Number(result.restaurant.rating),
+        address: result.restaurant.address,
+        photoReference: result.restaurant.photoReference,
+        googleMapsUrl: result.restaurant.googleMapsUrl,
+        distanceKm,
+      };
+    });
+
+    voteResults.sort((first, second) => {
+      if (first.yesCount !== second.yesCount) {
+        return second.yesCount - first.yesCount;
+      }
+      return (second.rating ?? 0) - (first.rating ?? 0);
+    });
+
+    const exactMatches = voteResults.filter(
+      (result) => result.yesCount === totalParticipants,
+    );
+
     return {
-      finalPick: session.finalRestaurant ? { id: session.finalRestaurant.id, name: session.finalRestaurant.name } : null,
+      finalPick: session.finalRestaurant
+        ? {
+            id: session.finalRestaurant.id,
+            name: session.finalRestaurant.name,
+          }
+        : null,
       matches: exactMatches,
-      bestOverlap: exactMatches.length ? [] : votes.slice(0, 3).map((row) => ({ ...row, totalParticipants })),
+      bestOverlap: exactMatches.length > 0 ? [] : voteResults.slice(0, 3),
     };
   }
 
   async history(userId: string, recentOnly = false) {
-    const rows = await this.participants.find({
-      where: { userId }, relations: { session: { finalRestaurant: true } },
-      order: { joinedAt: 'DESC' }, take: recentOnly ? 5 : 50,
+    const maximumResults = recentOnly ? 5 : 50;
+    const participantRows = await this.participants.find({
+      where: { userId },
+      relations: { session: { finalRestaurant: true } },
+      order: { joinedAt: 'DESC' },
+      take: maximumResults,
     });
 
-    const uniqueSessions = Array.from(
-      new Map(rows.map((row) => [row.session.id, row.session])).values(),
-    );
+    const sessionsById = new Map<string, Session>();
+    for (const participant of participantRows) {
+      sessionsById.set(participant.session.id, participant.session);
+    }
+
+    const uniqueSessions = Array.from(sessionsById.values());
 
     return uniqueSessions.map((session) => ({
-      id: session.id, roomCode: session.roomCode, status: session.status,
-      finalRestaurant: session.finalRestaurant?.name ?? null, restaurantName: session.finalRestaurant?.name ?? null,
+      id: session.id,
+      roomCode: session.roomCode,
+      status: session.status,
+      finalRestaurant: session.finalRestaurant?.name ?? null,
+      restaurantName: session.finalRestaurant?.name ?? null,
       createdAt: session.createdAt,
     }));
   }
@@ -365,7 +716,12 @@ export class SessionsService {
       throw new BadRequestException('location address is required');
     }
 
-    if (typeof dto.radiusKm !== 'number' || dto.radiusKm < 0.1 || dto.radiusKm > 100) {
+    const radiusIsInvalid =
+      typeof dto.radiusKm !== 'number'
+      || dto.radiusKm < 0.1
+      || dto.radiusKm > 100;
+
+    if (radiusIsInvalid) {
       throw new BadRequestException('radiusKm must be between 0.1 and 100');
     }
 
@@ -381,7 +737,11 @@ export class SessionsService {
       throw new BadRequestException('priceLevel values must be between 0 and 4');
     }
 
-    if (dto.matchRule !== MatchRule.ALL && dto.matchRule !== MatchRule.MAJORITY) {
+    const matchRuleIsInvalid =
+      dto.matchRule !== MatchRule.ALL
+      && dto.matchRule !== MatchRule.MAJORITY;
+
+    if (matchRuleIsInvalid) {
       throw new BadRequestException('matchRule must be ALL or MAJORITY');
     }
   }
