@@ -256,6 +256,15 @@ export class SessionsService {
   async getOne(id: string, userId: string) {
     const participant = await this.findParticipantOrFail(id, userId);
     const session = await this.findSessionOrFail(id);
+    const priceLevels: number[] = [];
+    const savedPrices = session.priceFilter?.split(',') ?? [];
+
+    for (const savedPrice of savedPrices) {
+      if (savedPrice) {
+        priceLevels.push(Number(savedPrice));
+      }
+    }
+
     return {
       id: session.id,
       roomCode: session.roomCode,
@@ -264,10 +273,7 @@ export class SessionsService {
       isHost: participant.isHost,
       locationName: session.locationName,
       radiusKm: Number(session.radiusKm),
-      priceLevel: (session.priceFilter ?? '')
-        .split(',')
-        .filter(Boolean)
-        .map(Number),
+      priceLevel: priceLevels,
       matchRule: session.matchRule,
     };
   }
@@ -280,12 +286,18 @@ export class SessionsService {
       order: { joinedAt: 'ASC' },
     });
 
-    return participants.map((participant) => ({
-      id: participant.user.id,
-      displayName: participant.user.displayName,
-      avatar: participant.user.avatar,
-      isHost: participant.isHost,
-    }));
+    const participantList = [];
+
+    for (const participant of participants) {
+      participantList.push({
+        id: participant.user.id,
+        displayName: participant.user.displayName,
+        avatar: participant.user.avatar,
+        isHost: participant.isHost,
+      });
+    }
+
+    return participantList;
   }
 
   async start(id: string, userId: string) {
@@ -381,9 +393,13 @@ export class SessionsService {
       }
     }
 
-    return uniqueRestaurants.map((restaurant) => {
-      return this.restaurantResponse(restaurant);
-    });
+    const restaurantList = [];
+
+    for (const restaurant of uniqueRestaurants) {
+      restaurantList.push(this.restaurantResponse(restaurant));
+    }
+
+    return restaurantList;
   }
 
   async getRestaurant(id: string, restaurantId: string, userId: string) {
@@ -526,15 +542,20 @@ export class SessionsService {
       relations: { user: true },
     });
 
+    const yesVoters = [];
+    for (const yesVote of yesVotes) {
+      yesVoters.push({
+        id: yesVote.user.id,
+        name: yesVote.user.displayName,
+        avatar: yesVote.user.avatar,
+      });
+    }
+
     return {
       id: match.id,
       isHost: participant.isHost,
       restaurant: this.restaurantResponse(match.restaurant),
-      yesVoters: yesVotes.map((yesVote) => ({
-        id: yesVote.user.id,
-        name: yesVote.user.displayName,
-        avatar: yesVote.user.avatar,
-      })),
+      yesVoters,
     };
   }
 
@@ -614,7 +635,9 @@ export class SessionsService {
       }
     }
 
-    const voteResults = Array.from(restaurantVotes.values()).map((result) => {
+    const voteResults = [];
+
+    for (const result of restaurantVotes.values()) {
       const restaurantLatitude = Number(result.restaurant.latitude);
       const restaurantLongitude = Number(result.restaurant.longitude);
       let distanceKm: number | null = null;
@@ -632,7 +655,7 @@ export class SessionsService {
         );
       }
 
-      return {
+      voteResults.push({
         restaurantId: result.restaurant.id,
         restaurantName: result.restaurant.name,
         yesCount: result.yesCount,
@@ -644,8 +667,8 @@ export class SessionsService {
         photoReference: result.restaurant.photoReference,
         googleMapsUrl: result.restaurant.googleMapsUrl,
         distanceKm,
-      };
-    });
+      });
+    }
 
     voteResults.sort((first, second) => {
       if (first.yesCount !== second.yesCount) {
@@ -654,9 +677,12 @@ export class SessionsService {
       return (second.rating ?? 0) - (first.rating ?? 0);
     });
 
-    const exactMatches = voteResults.filter(
-      (result) => result.yesCount === totalParticipants,
-    );
+    const exactMatches = [];
+    for (const result of voteResults) {
+      if (result.yesCount === totalParticipants) {
+        exactMatches.push(result);
+      }
+    }
 
     return {
       finalPick: session.finalRestaurant
@@ -686,14 +712,19 @@ export class SessionsService {
 
     const uniqueSessions = Array.from(sessionsById.values());
 
-    return uniqueSessions.map((session) => ({
-      id: session.id,
-      roomCode: session.roomCode,
-      status: session.status,
-      finalRestaurant: session.finalRestaurant?.name ?? null,
-      restaurantName: session.finalRestaurant?.name ?? null,
-      createdAt: session.createdAt,
-    }));
+    const history = [];
+    for (const session of uniqueSessions) {
+      history.push({
+        id: session.id,
+        roomCode: session.roomCode,
+        status: session.status,
+        finalRestaurant: session.finalRestaurant?.name ?? null,
+        restaurantName: session.finalRestaurant?.name ?? null,
+        createdAt: session.createdAt,
+      });
+    }
+
+    return history;
   }
 
   private validateCreateSession(dto: CreateSessionDto) {

@@ -111,10 +111,16 @@ export class PlacesService {
     const url = `${this.baseUrl}/autocomplete/json?input=${encodeURIComponent(query)}&key=${this.apiKey}`;
     const data = await this.callGoogleApi(url);
 
-    return data.predictions.map((place: GooglePrediction) => ({
-      placeId: place.place_id,
-      description: place.description,
-    }));
+    const suggestions = [];
+
+    for (const place of data.predictions as GooglePrediction[]) {
+      suggestions.push({
+        placeId: place.place_id,
+        description: place.description,
+      });
+    }
+
+    return suggestions;
   }
 
   async details(placeId: string) {
@@ -220,7 +226,13 @@ export class PlacesService {
       key: this.apiKey,
     });
     if (priceFilter) {
-      const prices = priceFilter.split(',').map(Number);
+      const prices: number[] = [];
+      const savedPrices = priceFilter.split(',');
+
+      for (const savedPrice of savedPrices) {
+        prices.push(Number(savedPrice));
+      }
+
       params.set('minprice', String(Math.min(...prices)));
       params.set('maxprice', String(Math.max(...prices)));
     }

@@ -31,12 +31,8 @@ export class UsersService {
     }
 
     const cleanName = dto.displayName.trim();
-    const duplicateUser = await this.userRepository.findOneBy({
-      displayName: cleanName,
-    });
-
-    if (duplicateUser && duplicateUser.id !== id) {
-      throw new BadRequestException('This display name is already taken');
+    if (cleanName.length === 0) {
+      throw new BadRequestException('displayName is required');
     }
 
     if (dto.avatar !== undefined) {
