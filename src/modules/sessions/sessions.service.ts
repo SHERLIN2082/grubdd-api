@@ -256,6 +256,9 @@ export class SessionsService {
   async getOne(id: string, userId: string) {
     const participant = await this.findParticipantOrFail(id, userId);
     const session = await this.findSessionOrFail(id);
+    const hostLeft =
+      session.status === SessionStatus.COMPLETED &&
+      session.finalRestaurantId === null;
     const priceLevels: number[] = [];
     const savedPrices = session.priceFilter?.split(',') ?? [];
 
@@ -268,7 +271,7 @@ export class SessionsService {
     return {
       id: session.id,
       roomCode: session.roomCode,
-      status: session.status,
+      status: hostLeft ? 'HOST_LEFT' : session.status,
       hostId: session.hostId,
       isHost: participant.isHost,
       locationName: session.locationName,
@@ -298,6 +301,27 @@ export class SessionsService {
     }
 
     return participantList;
+  }
+
+  async leave(id: string, userId: string) {
+    const session = await this.findSessionOrFail(id);
+    const participant = await this.findParticipantOrFail(id, userId);
+
+    if (participant.isHost) {
+      session.status = SessionStatus.COMPLETED;
+      await this.sessions.save(session);
+
+      this.gateway.emitToSession(id, 'sessionClosed', {
+        sessionId: id,
+        reason: 'HOST_LEFT',
+      });
+
+      return { hostLeft: true, status: session.status };
+    }
+
+    await this.participants.remove(participant);
+    this.gateway.emitToSession(id, 'participantLeft', { userId });
+    return { hostLeft: false, status: session.status };
   }
 
   async start(id: string, userId: string) {
