@@ -271,7 +271,7 @@ export class SessionsService {
     return {
       id: session.id,
       roomCode: session.roomCode,
-      status: hostLeft ? 'HOST_LEFT' : session.status,
+      status: hostLeft && !participant.isHost ? 'HOST_LEFT' : session.status,
       hostId: session.hostId,
       isHost: participant.isHost,
       locationName: session.locationName,
