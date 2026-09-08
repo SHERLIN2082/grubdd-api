@@ -21,7 +21,7 @@ export class User {
   @Column({ name: 'display_name', type: 'varchar', length: 100, nullable: true })
   displayName: string | null;
 
-  @Column({ type: 'varchar', length: 20, nullable: true })
+  @Column({ type: 'text', nullable: true })
   avatar: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
