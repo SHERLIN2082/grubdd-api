@@ -11,6 +11,7 @@ export interface GooglePlace {
   place_id: string;
   name: string;
   vicinity?: string;
+  formatted_address?: string;
   rating?: number;
   price_level?: number;
   geometry?: { location: { lat: number; lng: number } };
@@ -202,6 +203,7 @@ export class PlacesService {
     longitude: string,
     radiusKm: string,
     priceFilter: string | null,
+    foodPreference: string | null = null,
   ): Promise<GooglePlace[]> {
     const centerLatitude = Number(latitude);
     const centerLongitude = Number(longitude);
@@ -270,6 +272,8 @@ export class PlacesService {
         nearbyRestaurants.push(place);
       }
     }
+    if (foodPreference === 'Vegetarian') params.set('keyword', 'vegetarian restaurant');
+    if (foodPreference === 'Non-vegetarian') params.set('keyword', 'non vegetarian restaurant');
 
     // Higher-rated restaurants appear first.
     nearbyRestaurants.sort((first, second) => {
@@ -299,5 +303,15 @@ export class PlacesService {
     );
 
     return nearbyRestaurants;
+  }
+
+  async searchRestaurants(query: string) {
+    if (!query || query.trim().length < 2) throw new BadRequestException('query must be at least 2 characters');
+    const params = new URLSearchParams({ query: query.trim(), type: 'restaurant', key: this.apiKey });
+    const data = await this.callGoogleApi(`${this.baseUrl}/textsearch/json?${params}`);
+    return (data.results as GooglePlace[]).map((place) => ({
+      place_id: place.place_id, name: place.name, vicinity: place.formatted_address ?? place.vicinity ?? '', rating: place.rating,
+      price_level: place.price_level, photos: place.photos,
+    }));
   }
 }

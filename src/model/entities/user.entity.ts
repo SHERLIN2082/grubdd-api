@@ -24,6 +24,9 @@ export class User {
   @Column({ type: 'text', nullable: true })
   avatar: string | null;
 
+  @Column({ name: 'food_preference', type: 'varchar', length: 40, nullable: true })
+  foodPreference: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
   createdAt: Date;
 
