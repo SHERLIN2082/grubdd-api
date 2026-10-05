@@ -56,6 +56,9 @@ export class Session {
   @Column({ name: 'price_filter', type: 'varchar', length: 50, nullable: true })
   priceFilter: string | null;
 
+  @Column({ name: 'budget_per_person', type: 'int', unsigned: true, nullable: true })
+  budgetPerPerson: number | null;
+
   @Column({ name: 'match_rule', type: 'varchar', length: 30 })
   matchRule: MatchRule;
 

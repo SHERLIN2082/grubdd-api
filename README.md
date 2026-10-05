@@ -49,3 +49,10 @@ GOOGLE_PLACES_API_KEY=your-key
 
 `DB_SYNCHRONIZE=true` automatically creates the tables in your local database.
 Set it to `false` in production and use database migrations instead.
+
+For existing databases with synchronization disabled, apply
+`migrations/20260930_add_budget_per_person.sql` once before starting this version.
+Session creation accepts `budgetPerPerson` (whole INR per person, or `null` for
+no upper limit). This is a planning budget, not a Google price-category filter;
+restaurant affordability is not guaranteed. Legacy `priceLevel` requests remain
+supported when `budgetPerPerson` is absent.

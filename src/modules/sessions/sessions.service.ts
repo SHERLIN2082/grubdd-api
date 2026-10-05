@@ -200,7 +200,8 @@ export class SessionsService {
       latitude: String(dto.location.latitude),
       longitude: String(dto.location.longitude),
       radiusKm: String(dto.radiusKm),
-      priceFilter: dto.priceLevel.join(','),
+      priceFilter: dto.budgetPerPerson !== undefined ? null : dto.priceLevel?.join(',') ?? null,
+      budgetPerPerson: dto.budgetPerPerson ?? null,
       matchRule: dto.matchRule,
     });
     const session = await this.sessions.save(newSession);
@@ -263,6 +264,7 @@ export class SessionsService {
       hostId: session.hostId,
       isHost: participant.isHost,
       locationName: session.locationName,
+      budgetPerPerson: session.budgetPerPerson,
       radiusKm: Number(session.radiusKm),
       priceLevel: (session.priceFilter ?? '')
         .split(',')
@@ -725,11 +727,16 @@ export class SessionsService {
       throw new BadRequestException('radiusKm must be between 0.1 and 100');
     }
 
-    if (!Array.isArray(dto.priceLevel) || dto.priceLevel.length === 0) {
+    if (dto.budgetPerPerson !== undefined && dto.budgetPerPerson !== null &&
+        (!Number.isInteger(dto.budgetPerPerson) || dto.budgetPerPerson < 1 || dto.budgetPerPerson > 9999999)) {
+      throw new BadRequestException('budgetPerPerson must be a positive whole rupee amount up to 9999999, or null');
+    }
+
+    if (dto.budgetPerPerson === undefined && (!Array.isArray(dto.priceLevel) || dto.priceLevel.length === 0)) {
       throw new BadRequestException('select at least one price level');
     }
 
-    const hasInvalidPrice = dto.priceLevel.some(
+    const hasInvalidPrice = dto.budgetPerPerson === undefined && dto.priceLevel!.some(
       (price) => !Number.isInteger(price) || price < 0 || price > 4,
     );
 

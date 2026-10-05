@@ -40,13 +40,10 @@ export class UsersService {
     }
 
     if (dto.avatar !== undefined) {
-      if (typeof dto.avatar !== 'string' || dto.avatar.length === 0) {
+      if (dto.avatar.length === 0) {
         throw new BadRequestException('avatar cannot be empty');
       }
 
-      if (dto.avatar.length > 20) {
-        throw new BadRequestException('avatar must be 20 characters or less');
-      }
     }
 
     const user = await this.findMe(id);

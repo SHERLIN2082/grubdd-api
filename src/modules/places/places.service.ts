@@ -12,6 +12,8 @@ export interface GooglePlace {
   name: string;
   vicinity?: string;
   rating?: number;
+  user_ratings_total?: number;
+  types?: string[];
   price_level?: number;
   geometry?: { location: { lat: number; lng: number } };
   photos?: Array<{ photo_reference: string }>;
@@ -41,7 +43,7 @@ export class PlacesService {
     return key;
   }
 
-  private async callGoogleApi(url: string): Promise<any> {
+  private async callGoogleApi(url: string, allowPendingPage = false): Promise<any> {
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -49,6 +51,8 @@ export class PlacesService {
     }
 
     const data = await response.json();
+
+    if (allowPendingPage && data.status === 'INVALID_REQUEST') return data;
 
     if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
       const message = data.error_message ?? `Google Places error: ${data.status}`;
@@ -217,17 +221,35 @@ export class PlacesService {
       location: `${centerLatitude},${centerLongitude}`,
       radius: String(searchRadiusKm * 1000),
       type: 'restaurant',
+      rankby: 'prominence',
       key: this.apiKey,
     });
     if (priceFilter) {
       const prices = priceFilter.split(',').map(Number);
-      params.set('minprice', String(Math.min(...prices)));
-      params.set('maxprice', String(Math.max(...prices)));
+      // An unrestricted budget should also include places without price data.
+      if (![0, 1, 2, 3, 4].every((level) => prices.includes(level))) {
+        params.set('minprice', String(Math.min(...prices)));
+        params.set('maxprice', String(Math.max(...prices)));
+      }
     }
 
-    const url = `${this.baseUrl}/nearbysearch/json?${params}`;
-    const data = await this.callGoogleApi(url);
-    const googleResults = data.results as GooglePlace[];
+    const cafeParams = new URLSearchParams(params);
+    cafeParams.set('type', 'cafe');
+    const [restaurants, cafes] = await Promise.all([
+      this.nearbyPages(params),
+      this.nearbyPages(cafeParams),
+    ]);
+    const googleResults: GooglePlace[] = [];
+    const seenIds = new Set<string>();
+    // Interleave the two prominence-ranked lists, keeping each branch once.
+    for (let index = 0; index < Math.max(restaurants.length, cafes.length); index++) {
+      for (const place of [restaurants[index], cafes[index]]) {
+        if (place && !seenIds.has(place.place_id)) {
+          seenIds.add(place.place_id);
+          googleResults.push(place);
+        }
+      }
+    }
 
     this.logger.log(
       `[LOCATION 5] Google returned ${googleResults.length} restaurants`,
@@ -237,6 +259,11 @@ export class PlacesService {
 
     // Check every Google result one at a time.
     for (const place of googleResults) {
+      const rejection = this.diningRejection(place);
+      if (rejection) {
+        this.logger.log(`[DINING FILTER] Removed ${place.name}: ${rejection}`);
+        continue;
+      }
       const distance = this.getPlaceDistance(
         place,
         centerLatitude,
@@ -259,33 +286,66 @@ export class PlacesService {
       }
     }
 
-    // Higher-rated restaurants appear first.
-    nearbyRestaurants.sort((first, second) => {
-      const firstRating = first.rating ?? 0;
-      const secondRating = second.rating ?? 0;
-
-      if (firstRating !== secondRating) {
-        return secondRating - firstRating;
-      }
-
-      const firstDistance = this.getPlaceDistance(
-        first,
-        centerLatitude,
-        centerLongitude,
-      ) ?? 0;
-      const secondDistance = this.getPlaceDistance(
-        second,
-        centerLatitude,
-        centerLongitude,
-      ) ?? 0;
-
-      return firstDistance - secondDistance;
-    });
+    // Only established, well-rated dining places qualify; prominence breaks ties.
+    nearbyRestaurants.sort((first, second) =>
+      (second.rating! - first.rating!) ||
+      (second.user_ratings_total! - first.user_ratings_total!),
+    );
 
     this.logger.log(
       `[LOCATION 7] ${nearbyRestaurants.length} restaurant cards kept`,
     );
 
     return nearbyRestaurants;
+  }
+
+  private async waitForPage(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  private async nearbyPages(params: URLSearchParams): Promise<GooglePlace[]> {
+    let data = await this.callGoogleApi(`${this.baseUrl}/nearbysearch/json?${params}`);
+    const results: GooglePlace[] = [...(data.results ?? [])];
+    // Legacy Nearby Search exposes at most three pages per query.
+    for (let page = 1; page < 3 && data.next_page_token; page++) {
+      const nextParams = new URLSearchParams({
+        pagetoken: data.next_page_token, key: this.apiKey,
+      });
+      let next;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await this.waitForPage();
+        next = await this.callGoogleApi(`${this.baseUrl}/nearbysearch/json?${nextParams}`, true);
+        if (next.status !== 'INVALID_REQUEST') break;
+      }
+      if (next.status === 'INVALID_REQUEST') {
+        this.logger.warn('Nearby search page was not ready after retries; returning available results');
+        break;
+      }
+      results.push(...(next.results ?? []));
+      data = next;
+    }
+    return results;
+  }
+
+  private diningRejection(place: GooglePlace): string | null {
+    if (!Number.isFinite(place.rating) || (place.rating ?? 0) < 4 ||
+        !Number.isFinite(place.user_ratings_total) || (place.user_ratings_total ?? 0) < 100) {
+      return 'requires at least 4.0 stars and 100 reviews';
+    }
+    if (!place.types?.some((type) => type === 'restaurant' || type === 'cafe')) {
+      return 'not categorized as a restaurant or cafe';
+    }
+    if (place.types.includes('lodging')) return 'lodging listing, not a dedicated dining listing';
+    const name = place.name.toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ').trim();
+    if (/\b(?:gaming|gamers?|esports|arcade|cyber|internet\s*cafe|suites?|serviced\s*apartments?|guest\s*house|hostel|residency)\b/u.test(name)) {
+      return 'gaming, internet or accommodation venue';
+    }
+    if (/\bamma\s*(?:unavagam|unavakam|unavagu?m|canteen)\b/u.test(name) ||
+        /அம்மா\s*உணவகம்/u.test(name)) {
+      return 'Amma Unavagam/canteen';
+    }
+    // Names are a best-effort signal: Google also labels some stalls as cafes.
+    return /\b(?:snacks?|chaat|chat|pani\s*puri|juice)\s*(?:shops?|stalls?|cent(?:er|re)s?|corners?|points?)?\b|\btea\s*(?:shops?|stalls?|kadai)\b/u.test(name)
+      ? 'snack, tea-stall or juice-shop name' : null;
   }
 }

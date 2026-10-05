@@ -19,8 +19,12 @@ export class CreateSessionDto {
   @ApiProperty({ example: 5, minimum: 0.1, maximum: 100 })
   radiusKm: number;
 
-  @ApiProperty({ example: [1, 2], type: [Number] })
-  priceLevel: number[];
+  @ApiProperty({ example: [1, 2], type: [Number], required: false, deprecated: true })
+  priceLevel?: number[];
+
+  @ApiProperty({ example: 500, required: false, nullable: true,
+    description: 'Planning budget in INR per person; null means no upper limit. Does not filter restaurant price tiers.' })
+  budgetPerPerson?: number | null;
 
   @ApiProperty({ example: MatchRule.ALL, enum: MatchRule })
   matchRule: MatchRule;
