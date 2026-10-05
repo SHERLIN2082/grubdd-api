@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, LessThanOrEqual, Repository } from 'typeorm';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { Match } from '../../model/entities/match.entity';
 import { Restaurant } from '../../model/entities/restaurant.entity';
@@ -175,7 +175,8 @@ export class SessionsService {
     if (!participant) {
       throw new ForbiddenException('You are not a participant in this session');
     }
-
+    participant.lastSeen = new Date();
+    await this.participants.save(participant);
     return participant;
   }
 
@@ -209,6 +210,7 @@ export class SessionsService {
       sessionId: session.id,
       userId,
       isHost: true,
+      lastSeen: new Date(),
     });
     await this.participants.save(host);
 
@@ -240,9 +242,13 @@ export class SessionsService {
       const newParticipant = this.participants.create({
         sessionId: session.id,
         userId,
+        lastSeen: new Date(),
       });
       participant = await this.participants.save(newParticipant);
       this.gateway.emitToSession(session.id, 'participantJoined', { userId });
+    } else {
+      participant.lastSeen = new Date();
+      await this.participants.save(participant);
     }
 
     return {
@@ -722,8 +728,17 @@ export class SessionsService {
 
   async history(userId: string, recentOnly = false) {
     const maximumResults = recentOnly ? 5 : 50;
+    const staleBefore = new Date(Date.now() - 60 * 1000);
     const participantRows = await this.participants.find({
-      where: { userId },
+      where: {
+        userId,
+        ...(recentOnly
+          ? {
+              session: { status: In([SessionStatus.LOBBY, SessionStatus.ACTIVE]) },
+              lastSeen: LessThanOrEqual(staleBefore),
+            }
+          : {}),
+      },
       relations: { session: { finalRestaurant: true } },
       order: { joinedAt: 'DESC' },
       take: maximumResults,
@@ -735,9 +750,31 @@ export class SessionsService {
     }
 
     const uniqueSessions = Array.from(sessionsById.values());
+    const sessionIds = uniqueSessions.map((session) => session.id);
+    const allParticipants = sessionIds.length === 0
+      ? []
+      : await this.participants.find({
+          where: { sessionId: In(sessionIds) },
+          relations: { user: true },
+          order: { joinedAt: 'ASC' },
+        });
+    const participantsBySession = new Map<string, SessionParticipant[]>();
+    for (const participant of allParticipants) {
+      const existing = participantsBySession.get(participant.sessionId) ?? [];
+      existing.push(participant);
+      participantsBySession.set(participant.sessionId, existing);
+    }
 
     const history = [];
     for (const session of uniqueSessions) {
+      const members = (participantsBySession.get(session.id) ?? []).map(
+        (participant) => ({
+          id: participant.userId,
+          displayName: participant.user?.displayName ?? 'Grubbd member',
+          avatar: participant.user?.avatar ?? null,
+          isHost: participant.isHost,
+        }),
+      );
       history.push({
         id: session.id,
         roomCode: session.roomCode,
@@ -745,6 +782,7 @@ export class SessionsService {
         finalRestaurant: session.finalRestaurant?.name ?? null,
         restaurantName: session.finalRestaurant?.name ?? null,
         createdAt: session.createdAt,
+        members,
       });
     }
 

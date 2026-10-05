@@ -49,3 +49,7 @@ GOOGLE_PLACES_API_KEY=your-key
 
 `DB_SYNCHRONIZE=true` automatically creates the tables in your local database.
 Set it to `false` in production and use database migrations instead.
+
+The additive social-food tables are defined in
+`database/migrations/001_social_features.sql`. Apply it to an existing database
+when `DB_SYNCHRONIZE=false`.
