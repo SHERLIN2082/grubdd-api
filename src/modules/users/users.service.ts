@@ -31,12 +31,8 @@ export class UsersService {
     }
 
     const cleanName = dto.displayName.trim();
-    const duplicateUser = await this.userRepository.findOneBy({
-      displayName: cleanName,
-    });
-
-    if (duplicateUser && duplicateUser.id !== id) {
-      throw new BadRequestException('This display name is already taken');
+    if (cleanName.length === 0) {
+      throw new BadRequestException('displayName is required');
     }
 
     if (dto.avatar !== undefined) {
@@ -54,5 +50,21 @@ export class UsersService {
     }
 
     return this.userRepository.save(user);
+  }
+
+  async findPreferences(id: string) {
+    const user = await this.findMe(id);
+    return { foodPreference: user.foodPreference };
+  }
+
+  async updatePreferences(id: string, foodPreference: string) {
+    const allowed = ['Vegetarian', 'Non-vegetarian', 'Any food'];
+    if (!allowed.includes(foodPreference)) {
+      throw new BadRequestException('foodPreference must be Vegetarian, Non-vegetarian, or Any food');
+    }
+    const user = await this.findMe(id);
+    user.foodPreference = foodPreference;
+    await this.userRepository.save(user);
+    return { foodPreference: user.foodPreference };
   }
 }

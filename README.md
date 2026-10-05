@@ -56,3 +56,6 @@ Session creation accepts `budgetPerPerson` (whole INR per person, or `null` for
 no upper limit). This is a planning budget, not a Google price-category filter;
 restaurant affordability is not guaranteed. Legacy `priceLevel` requests remain
 supported when `budgetPerPerson` is absent.
+The additive social-food tables are defined in
+`database/migrations/001_social_features.sql`. Apply it to an existing database
+when `DB_SYNCHRONIZE=false`.

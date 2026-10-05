@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthRequest } from '../../common/interfaces/auth-request.interface';
 import { CreateSessionDto } from './dto/create-session.dto';
@@ -49,6 +49,12 @@ export class SessionsController {
   @ApiOperation({ summary: 'Get lobby participants' })
   participants(@Param('id') id: string, @Req() request: AuthRequest) {
     return this.sessions.getParticipants(id, request.user.id);
+  }
+
+  @Delete(':id/leave')
+  @ApiOperation({ summary: 'Leave a session or close it when the host leaves' })
+  leave(@Param('id') id: string, @Req() request: AuthRequest) {
+    return this.sessions.leave(id, request.user.id);
   }
 
   @Post(':id/start')

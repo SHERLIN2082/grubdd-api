@@ -27,6 +27,24 @@ export class PlacesController {
     return this.places.reverseGeocode(query.lat, query.lng);
   }
 
+  @Get('nearby')
+  @ApiOperation({ summary: 'Find nearby restaurants' })
+  nearby(
+    @Query('lat') latitude: string,
+    @Query('lng') longitude: string,
+    @Query('radiusKm') radiusKm = '5',
+    @Query('price') price: string | null,
+    @Query('foodPreference') foodPreference: string | null,
+  ) {
+    return this.places.nearby(latitude, longitude, radiusKm, price, foodPreference);
+  }
+
+  @Get('search')
+  @ApiOperation({ summary: 'Search restaurants by text' })
+  search(@Query('query') query: string) {
+    return this.places.searchRestaurants(query);
+  }
+
   @Get('photo')
   @ApiOperation({
     summary: 'Load a Google Places photo without exposing the API key',

@@ -9,6 +9,18 @@ import { JwtAuthMiddleware } from './common/middleware/jwt-auth.middleware';
 import { PlacesController } from './modules/places/places.controller';
 import { SessionsController } from './modules/sessions/sessions.controller';
 import { UsersController } from './modules/users/users.controller';
+import { PostsModule } from './modules/posts/posts.module';
+import { PostsController } from './modules/posts/posts.controller';
+import { CollectionsModule } from './modules/collections/collections.module';
+import { CollectionsController } from './modules/collections/collections.controller';
+import { GroupsModule } from './modules/groups/groups.module';
+import { GroupsController } from './modules/groups/groups.controller';
+import { FoodTrailModule } from './modules/food-trail/food-trail.module';
+import { FoodTrailController } from './modules/food-trail/food-trail.controller';
+import { SavedPlacesModule } from './modules/saved-places/saved-places.module';
+import { SavedPlacesController } from './modules/saved-places/saved-places.controller';
+import { MediaModule } from './modules/media/media.module';
+import { MediaController } from './modules/media/media.controller';
 
 @Module({
   imports: [
@@ -30,12 +42,28 @@ import { UsersController } from './modules/users/users.controller';
     UsersModule,
     PlacesModule,
     SessionsModule,
+    PostsModule,
+    CollectionsModule,
+    GroupsModule,
+    FoodTrailModule,
+    SavedPlacesModule,
+    MediaModule,
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(JwtAuthMiddleware)
-      .forRoutes(UsersController, SessionsController, PlacesController);
+      .forRoutes(
+        UsersController,
+        SessionsController,
+        PlacesController,
+        PostsController,
+        CollectionsController,
+        GroupsController,
+        FoodTrailController,
+        SavedPlacesController,
+        MediaController,
+      );
   }
 }
