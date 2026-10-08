@@ -51,4 +51,13 @@ export class GroupsService {
     }
     return group;
   }
+
+  async remove(userId: string, groupId: string) {
+    const group = await this.groups.findOneByOrFail({ id: groupId });
+    if (group.ownerId !== userId) {
+      throw new ForbiddenException('Only the group owner can delete the group');
+    }
+    await this.groups.remove(group);
+    return { deleted: true, groupId };
+  }
 }

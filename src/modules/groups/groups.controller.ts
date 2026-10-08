@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post as HttpPost, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post as HttpPost, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthRequest } from '../../common/interfaces/auth-request.interface';
 import { CreateGroupDto } from './dto/create-group.dto';
@@ -16,5 +16,8 @@ export class GroupsController {
   }
   @HttpPost(':id/join') join(@Param('id') id: string, @Req() request: AuthRequest) {
     return this.groups.join(request.user.id, id);
+  }
+  @Delete(':id') remove(@Param('id') id: string, @Req() request: AuthRequest) {
+    return this.groups.remove(request.user.id, id);
   }
 }

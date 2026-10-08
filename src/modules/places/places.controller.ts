@@ -35,8 +35,9 @@ export class PlacesController {
     @Query('radiusKm') radiusKm = '5',
     @Query('price') price: string | null,
     @Query('foodPreference') foodPreference: string | null,
+    @Query('category') category: string | null,
   ) {
-    return this.places.nearby(latitude, longitude, radiusKm, price, foodPreference);
+    return this.places.nearby(latitude, longitude, radiusKm, price, foodPreference, category);
   }
 
   @Get('search')

@@ -208,6 +208,7 @@ export class PlacesService {
     radiusKm: string,
     priceFilter: string | null,
     foodPreference: string | null = null,
+    category: string | null = null,
   ): Promise<GooglePlace[]> {
     const centerLatitude = Number(latitude);
     const centerLongitude = Number(longitude);
@@ -243,15 +244,17 @@ export class PlacesService {
 
     const cafeParams = new URLSearchParams(params);
     cafeParams.set('type', 'cafe');
-    const [restaurants, cafes] = await Promise.all([
-      this.nearbyPages(params),
-      this.nearbyPages(cafeParams),
-    ]);
+    const restaurantResults = category === 'cafe'
+      ? []
+      : await this.nearbyPages(params);
+    const cafeResults = category === 'restaurant'
+      ? []
+      : await this.nearbyPages(cafeParams);
     const googleResults: GooglePlace[] = [];
     const seenIds = new Set<string>();
     // Interleave the two prominence-ranked lists, keeping each branch once.
-    for (let index = 0; index < Math.max(restaurants.length, cafes.length); index++) {
-      for (const place of [restaurants[index], cafes[index]]) {
+    for (let index = 0; index < Math.max(restaurantResults.length, cafeResults.length); index++) {
+      for (const place of [restaurantResults[index], cafeResults[index]]) {
         if (place && !seenIds.has(place.place_id)) {
           seenIds.add(place.place_id);
           googleResults.push(place);
